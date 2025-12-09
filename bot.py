@@ -1,25 +1,27 @@
 import telebot
+import os
 from telebot.types import Message
+from dotenv import load_dotenv
 
-TOKEN = "YOUR_TOKEN"
+load_dotenv()
+
+TOKEN = os.getenv("BOT_TOKEN")
+BOT_OWNER = int(os.getenv("BOT_OWNER"))
 bot = telebot.TeleBot(TOKEN)
 
-# Store group
 current_group = None
-
-# Allowed links
 allowed_links = set()
-
-# Warning counter
 user_warns = {}
 
-# Admin inbox ID (will be stored after admin sends /start in bot inbox)
-bot_admin_id = None
+# -------------------------
+# OWNER CHECK
+# -------------------------
+def is_owner(uid):
+    return uid == BOT_OWNER
 
-
-# ---------------------------
-# ADMIN CHECK
-# ---------------------------
+# -------------------------
+# ADMIN CHECK (group admin)
+# -------------------------
 def is_admin(user_id, chat_id):
     try:
         member = bot.get_chat_member(chat_id, user_id)
@@ -28,53 +30,42 @@ def is_admin(user_id, chat_id):
         return False
 
 
-# ---------------------------
-# SET GROUP (command)
-# ---------------------------
+# -------------------------
+# /setgroup (OWNER ONLY)
+# -------------------------
 @bot.message_handler(commands=['setgroup'])
 def set_group(message):
     global current_group
-    if not is_admin(message.from_user.id, message.chat.id):
+    if not is_owner(message.from_user.id):
         return
-    
+
     try:
         gid = int(message.text.split()[1])
         current_group = gid
-        bot.reply_to(message, f"✔ Bot is now active only in group: `{gid}`", parse_mode="Markdown")
+        bot.reply_to(message, f"✔ Bot will work only in group: `{gid}`", parse_mode="Markdown")
     except:
         bot.reply_to(message, "Usage: /setgroup <group_id>")
 
 
-# ---------------------------
-# REGISTER ADMIN FOR BOT INBOX
-# ---------------------------
-@bot.message_handler(commands=['start'])
-def register_admin(message):
-    global bot_admin_id
-    if message.chat.type == "private":
-        bot_admin_id = message.from_user.id
-        bot.reply_to(message, "✔ You are now registered as bot admin.")
-        
-
-# ---------------------------
-# ADD ALLOWED LINK
-# ---------------------------
+# -------------------------
+# /addlink
+# -------------------------
 @bot.message_handler(commands=['addlink'])
 def add_link(message):
     if not is_admin(message.from_user.id, message.chat.id):
         return
-
+    
     try:
         link = message.text.split()[1]
         allowed_links.add(link)
-        bot.reply_to(message, f"✔ Allowed link added:\n{link}")
+        bot.reply_to(message, "✔ Link added to allowed list.")
     except:
         bot.reply_to(message, "Usage: /addlink <url>")
 
 
-# ---------------------------
-# REMOVE LINK
-# ---------------------------
+# -------------------------
+# /removelink
+# -------------------------
 @bot.message_handler(commands=['removelink'])
 def remove_link(message):
     if not is_admin(message.from_user.id, message.chat.id):
@@ -83,154 +74,158 @@ def remove_link(message):
     try:
         link = message.text.split()[1]
         allowed_links.discard(link)
-        bot.reply_to(message, f"✔ Removed allowed link:\n{link}")
+        bot.reply_to(message, "✔ Link removed.")
     except:
         bot.reply_to(message, "Usage: /removelink <url>")
 
 
-# ---------------------------
-# SHOW ALLOWED LINKS
-# ---------------------------
+# -------------------------
+# /allowedlinks
+# -------------------------
 @bot.message_handler(commands=['allowedlinks'])
 def show_links(message):
     if not allowed_links:
-        bot.reply_to(message, "No allowed links.")
+        bot.reply_to(message, "No allowed links saved.")
     else:
         txt = "\n".join(list(allowed_links))
-        bot.reply_to(message, f"Allowed links:\n{txt}")
+        bot.reply_to(message, f"Allowed Links:\n{txt}")
 
 
-# ---------------------------
-# USER ID FROM USERNAME
-# ---------------------------
+# -------------------------
+# /id
+# -------------------------
 @bot.message_handler(commands=['id'])
-def get_id(message):
+def get_uid(message):
+    if not is_admin(message.from_user.id, message.chat.id):
+        return
     try:
         username = message.text.split()[1].replace("@", "")
         user = bot.get_chat(username)
         bot.reply_to(message, f"User ID: `{user.id}`", parse_mode="Markdown")
     except:
-        bot.reply_to(message, "Could not find username.")
+        bot.reply_to(message, "Username not found.")
 
 
-# ---------------------------
+# -------------------------
 # BAN / UNBAN / KICK
-# ---------------------------
+# -------------------------
 @bot.message_handler(commands=['ban'])
 def ban_user(message):
     if not is_admin(message.from_user.id, message.chat.id):
         return
+    
     try:
         target = message.text.split()[1]
         bot.ban_chat_member(message.chat.id, target)
-        bot.reply_to(message, f"✔ Banned: {target}")
+        bot.reply_to(message, "✔ User banned.")
     except:
         bot.reply_to(message, "Usage: /ban <id or @username>")
 
 
 @bot.message_handler(commands=['unban'])
 def unban_user(message):
-    if not is_admin(message.from_user.id, message.chat.id): 
+    if not is_admin(message.from_user.id, message.chat.id):
         return
+    
     try:
         target = message.text.split()[1]
         bot.unban_chat_member(message.chat.id, target)
-        bot.reply_to(message, f"✔ Unbanned: {target}")
+        bot.reply_to(message, "✔ User unbanned.")
     except:
-        bot.reply_to(message, "Usage: /unban <id or @username>")
+        bot.reply_to(message, "Usage: /unban <id>")
 
 
 @bot.message_handler(commands=['kick'])
-def kick(message):
+def kick_user(message):
     if not is_admin(message.from_user.id, message.chat.id):
         return
+    
     try:
         target = message.text.split()[1]
         bot.ban_chat_member(message.chat.id, target)
         bot.unban_chat_member(message.chat.id, target)
-        bot.reply_to(message, f"✔ Kicked: {target}")
+        bot.reply_to(message, "✔ User kicked.")
     except:
-        bot.reply_to(message, "Usage: /kick <id or @username>")
+        bot.reply_to(message, "Usage: /kick <id>")
 
 
-# ---------------------------
-# AUTO WARN SYSTEM
-# ---------------------------
+# -------------------------
+# WARN SYSTEM
+# -------------------------
 def warn_user(chat_id, user_id):
     if user_id not in user_warns:
         user_warns[user_id] = 0
+    
     user_warns[user_id] += 1
+    w = user_warns[user_id]
 
-    warns = user_warns[user_id]
+    bot.send_message(chat_id, f"⚠ Warning {w}/3")
 
-    bot.send_message(chat_id, f"⚠ Warning {warns}/3")
-
-    if warns >= 3:
+    if w >= 3:
         bot.ban_chat_member(chat_id, user_id)
-        bot.send_message(chat_id, "🚫 User has been banned for repeated violations.")
-        user_warns[user_id] = 0  # reset
+        bot.send_message(chat_id, "🚫 User banned (3 warnings)")
+        user_warns[user_id] = 0
 
 
-# ---------------------------
+# -------------------------
+# PRIVATE CHAT → OWNER ONLY
+# -------------------------
+@bot.message_handler(func=lambda m: m.chat.type == "private")
+def inbox(message):
+
+    # If message from owner → allow
+    if is_owner(message.from_user.id):
+        bot.reply_to(message, "✔ Owner recognized. Inbox active.")
+        return
+
+    # Otherwise forward to owner silently
+    bot.forward_message(BOT_OWNER, message.chat.id, message.message_id)
+
+
+# -------------------------
 # AUTO MODERATION
-# ---------------------------
-@bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'forward'])
-def auto_moderation(message):
+# -------------------------
+@bot.message_handler(content_types=['text', 'photo', 'video', 'document'])
+def moderation(message):
 
-    # BOT INBOX HANDLING
-    if message.chat.type == "private":
-
-        if message.from_user.id != bot_admin_id:
-            if bot_admin_id:
-                bot.forward_message(bot_admin_id, message.chat.id, message.message_id)
-            return
-        
-        return  # admin sending → no restrictions
-
-
-    # GROUP FILTERING
+    # group lock
     if current_group and message.chat.id != current_group:
         return
 
-    user_id = message.from_user.id
-
-    if is_admin(user_id, message.chat.id):
+    # admin ignore
+    if is_admin(message.from_user.id, message.chat.id):
         return
 
-    # FORWARDED MESSAGE CHECK
+    uid = message.from_user.id
+
+    # forwarded message
     if message.forward_from or message.forward_from_chat:
         bot.delete_message(message.chat.id, message.message_id)
-        warn_user(message.chat.id, user_id)
+        warn_user(message.chat.id, uid)
         return
 
-    # TEXT LIMIT (20 words)
+    # text limit 20 words
     if message.content_type == "text":
-        words = message.text.split()
-        if len(words) > 20:
+        if len(message.text.split()) > 20:
             bot.delete_message(message.chat.id, message.message_id)
-            warn_user(message.chat.id, user_id)
+            warn_user(message.chat.id, uid)
             return
 
-        # Link detection
+        # link detection
         if "http://" in message.text or "https://" in message.text or "t.me/" in message.text:
-            for link in allowed_links:
-                if link in message.text:
+            for x in allowed_links:
+                if x in message.text:
                     return
 
             bot.delete_message(message.chat.id, message.message_id)
-            warn_user(message.chat.id, user_id)
+            warn_user(message.chat.id, uid)
             return
 
-    # PHOTO
-    if message.content_type == "photo":
+    # photo/video/document delete
+    if message.content_type in ["photo", "video", "document"]:
         bot.delete_message(message.chat.id, message.message_id)
-        warn_user(message.chat.id, user_id)
-
-    # VIDEO
-    if message.content_type == "video":
-        bot.delete_message(message.chat.id, message.message_id)
-        warn_user(message.chat.id, user_id)
+        warn_user(message.chat.id, uid)
 
 
-print("Bot Running...")
+print("Bot running...")
 bot.polling(none_stop=True)
